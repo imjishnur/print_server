@@ -1,59 +1,51 @@
 <?php
-// CORS Headers
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin");
+/**
+ * BIZPOZ Print Server - Entry point
+ * Receives POST from POS, handles CORS, delegates to printer_load.php
+ */
 
-// Handle preflight request
+// Error reporting
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_WARNING);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
+// CORS & SSL / HTTPS Compatibility Headers
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-API-KEY');
+header('Access-Control-Allow-Credentials: true');
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
-    exit();
+    exit;
 }
 
-// Test-only: if GET request, show status
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    echo "bizpoz_print print server is running.";
-    exit();
-}
+// Get raw input and POST data
+$rawInput = file_get_contents('php://input');
+$postData = $_POST;
 
-//load library
-require __DIR__ . '/escpos-php/autoload.php';
-//include helper function
-include_once 'include/printer_helper.php';
-//include printer load
-include_once 'include/printer_load.php';
-
-$raw = isset($_POST['content_data']) ? $_POST['content_data'] : '';
-$object = json_decode($raw);
-if(!$object){
-    http_response_code(400);
-    echo 'ERROR: Invalid JSON content_data. Received: ' . substr($raw, 0, 200);
-    exit();
-}
-
-$print_type = isset($_POST['print_type']) && $_POST['print_type'] ? $_POST['print_type'] : '';
-
-if($print_type==""){
-    http_response_code(400);
-    echo 'ERROR: Missing print_type parameter.';
-    exit();
-}
-
-try {
-    if($print_type=="Bill"){
-       print_receipt_bill($object);
-    }else if($print_type=="KOT"){
-       print_kitchen_printers($object);
-    }else if($print_type=="Invoice"){
-       print_receipt($object);
-    }else{
-       http_response_code(400);
-       echo 'ERROR: Unknown print_type: ' . $print_type;
-       exit();
+// Decode content_data - may arrive as string or array
+$contentData = null;
+if (!empty($postData['content_data'])) {
+    $raw = $postData['content_data'];
+    if (is_string($raw)) {
+        $contentData = json_decode($raw, true);
+    } else {
+        $contentData = $raw;
     }
-    echo 'OK: Print sent to printer successfully. print_type=' . $print_type;
-} catch (Exception $e) {
-    http_response_code(500);
-    echo 'ERROR: Printer connection failed - ' . $e->getMessage();
-    exit();
+} elseif (!empty($rawInput)) {
+    $contentData = json_decode($rawInput, true);
 }
+
+if ($contentData === null) {
+    http_response_code(400);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'error' => 'No content_data received']);
+    exit;
+}
+
+// Delegate to printer_load.php for actual ESC/POS printing
+$_print_data = $contentData;
+$_print_type = $postData['print_type'] ?? ($contentData['print_type'] ?? 'KOT');
+
+include __DIR__ . '/include/printer_load.php';

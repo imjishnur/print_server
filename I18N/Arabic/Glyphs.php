@@ -564,7 +564,9 @@ class I18N_Arabic_Glyphs
             $table = array_flip(get_html_translation_table(HTML_ENTITIES));
             
             // PHP gives us ISO-8859-1 data, we need UTF-8.
-            $table = array_map('utf8_encode', $table);
+            $table = array_map(function($v) {
+                return mb_convert_encoding($v, 'UTF-8', 'ISO-8859-1');
+            }, $table);
             
             // Add apostrophe (XML)
             $table['&apos;'] = "'";

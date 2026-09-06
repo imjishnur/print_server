@@ -1,9 +1,0 @@
-#wrapper {
-    max-width: 685px;
-}
-
-@media print {
-    #wrapper {
-        max-width: 685px;
-    }
-}

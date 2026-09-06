@@ -68,6 +68,7 @@
  * @license   LGPL <http://www.gnu.org/licenses/lgpl.txt>
  * @link      http://www.ar-php.org
  */  
+#[\AllowDynamicProperties]
 class I18N_Arabic
 {
     private $_inputCharset  = 'utf-8';
@@ -167,7 +168,7 @@ class I18N_Arabic
      */ 
     public static function autoload($className) 
     {
-        include self::getClassFile($className);
+        include_once self::getClassFile($className);
     }
 
     /**
@@ -222,7 +223,7 @@ class I18N_Arabic
         $class         = 'I18N_Arabic_' . $library;
 
         if (!$this->_useAutoload) {
-            include self::getClassFile($this->myFile); 
+            include_once self::getClassFile($this->myFile); 
         }
 
         $this->myObject   = new $class();
