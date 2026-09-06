@@ -1,3 +1,7 @@
 .DS_Store
 Thumbs.db
 *.log
+backups/
+.update_state.json
+update.lock
+.*.tmp_*
