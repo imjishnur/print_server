@@ -4,6 +4,10 @@
  * Displays Server IP, Connected Printers, and Interactive Payload Testing
  */
 
+require __DIR__ . '/include/auto_updater.php';
+$__updateConfig = (require __DIR__ . '/config.php')['auto_update'] ?? ['enabled' => false, 'check_interval' => '1h'];
+$__updater = new AutoUpdater($__updateConfig, __DIR__);
+
 function getServerIP()
 {
     $ip = $_SERVER['SERVER_ADDR'] ?? '';
@@ -61,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $serverIp = getServerIP();
 $printers = getConnectedPrinters();
+$updateStatus = $__updater->getStatus();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -331,6 +336,48 @@ $printers = getConnectedPrinters();
             border-color: #ef4444;
             color: #f87171;
         }
+
+        .update-card {
+            margin-bottom: 24px;
+        }
+
+        .update-pill {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .update-pill.on {
+            background: #059669;
+            color: #ecfdf5;
+        }
+
+        .update-pill.off {
+            background: #475569;
+            color: #cbd5e1;
+        }
+
+        .update-msg {
+            margin-top: 12px;
+            font-size: 13px;
+            font-family: monospace;
+            color: #94a3b8;
+            min-height: 18px;
+        }
+
+        .update-msg.success {
+            color: #34d399;
+        }
+
+        .update-msg.error {
+            color: #f87171;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
     </style>
 </head>
 
@@ -393,6 +440,42 @@ $printers = getConnectedPrinters();
                     <?php endif; ?>
                 </div>
             </div>
+        </div>
+
+        <div class="card update-card">
+            <div class="card-title">
+                <span>🔄 Auto-Update</span>
+                <span id="updatePill"
+                    class="update-pill <?php echo $updateStatus['enabled'] ? 'on' : 'off'; ?>">
+                    <?php echo $updateStatus['enabled'] ? 'ENABLED' : 'DISABLED'; ?>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Current Version:</span>
+                <span class="info-val" id="updateLocalVersion"><?php echo htmlspecialchars($updateStatus['local_version']); ?></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Check Interval:</span>
+                <span class="info-val"><?php echo htmlspecialchars($updateStatus['check_interval']); ?></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Last Checked:</span>
+                <span class="info-val" id="updateLastCheck">
+                    <?php echo $updateStatus['last_check'] ? htmlspecialchars(date('Y-m-d H:i:s', $updateStatus['last_check'])) : 'Never'; ?>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Last Update Applied:</span>
+                <span class="info-val" id="updateLastApplied">
+                    <?php echo $updateStatus['last_update']
+                        ? htmlspecialchars(date('Y-m-d H:i:s', $updateStatus['last_update']) . ' (' . $updateStatus['last_update_from'] . ' -> ' . $updateStatus['last_update_to'] . ')')
+                        : 'No updates applied yet'; ?>
+                </span>
+            </div>
+            <div class="actions" style="margin-top: 14px;">
+                <button class="btn btn-secondary btn-small" onclick="checkForUpdateNow()">⬇️ Check For Updates Now</button>
+            </div>
+            <div id="updateMsg" class="update-msg"></div>
         </div>
 
         <div class="card">
@@ -542,6 +625,78 @@ $printers = getConnectedPrinters();
         }
 
         loadPayload('BILL_WIN');
+
+        // -------------------------------------------------------------
+        // Auto-Update polling
+        // -------------------------------------------------------------
+        const updateEnabled = <?php echo $updateStatus['enabled'] ? 'true' : 'false'; ?>;
+        const updateIntervalMs = <?php echo (int)$updateStatus['check_interval_seconds'] * 1000; ?>;
+
+        function renderUpdateResult(data, isManual) {
+            const msgBox = document.getElementById('updateMsg');
+            if (!data || typeof data !== 'object') {
+                msgBox.className = 'update-msg error';
+                msgBox.innerText = 'Update check failed: invalid response from server.';
+                return;
+            }
+
+            if (data.status === 'up_to_date') {
+                msgBox.className = 'update-msg success';
+                msgBox.innerText = isManual ? 'Already up to date.' : '';
+            } else if (data.status === 'updated') {
+                msgBox.className = 'update-msg success';
+                msgBox.innerText = `Updated ${data.from_version} -> ${data.to_version} (${(data.updated_files || []).length} file(s) changed). Reloading...`;
+                document.getElementById('updateLocalVersion').innerText = data.to_version;
+                document.getElementById('updateLastApplied').innerText = new Date().toLocaleString() + ' (' + data.from_version + ' -> ' + data.to_version + ')';
+                setTimeout(() => window.location.reload(), 2500);
+            } else if (data.status === 'partial_update') {
+                msgBox.className = 'update-msg error';
+                msgBox.innerText = `Partial update: ${(data.updated_files || []).length} file(s) updated, ${(data.errors || []).length} failed. See update.log for details.`;
+            } else if (data.status === 'not_due') {
+                msgBox.className = 'update-msg';
+                msgBox.innerText = isManual ? '' : '';
+            } else if (data.status === 'disabled') {
+                msgBox.className = 'update-msg';
+                msgBox.innerText = 'Auto-update is disabled in config.php.';
+            } else if (data.status === 'already_running') {
+                msgBox.className = 'update-msg';
+                msgBox.innerText = 'An update check is already in progress.';
+            } else {
+                msgBox.className = 'update-msg error';
+                msgBox.innerText = 'Update check error: ' + (data.error || 'unknown error');
+            }
+
+            if (document.getElementById('updateLastCheck')) {
+                document.getElementById('updateLastCheck').innerText = new Date().toLocaleString();
+            }
+        }
+
+        async function runUpdateCheck(force) {
+            try {
+                const url = 'check_update.php' + (force ? '?force=1' : '');
+                const response = await fetch(url);
+                const data = await response.json();
+                renderUpdateResult(data, force);
+            } catch (err) {
+                const msgBox = document.getElementById('updateMsg');
+                msgBox.className = 'update-msg error';
+                msgBox.innerText = 'Could not reach update checker: ' + err.message;
+            }
+        }
+
+        function checkForUpdateNow() {
+            const msgBox = document.getElementById('updateMsg');
+            msgBox.className = 'update-msg';
+            msgBox.innerText = 'Checking for updates...';
+            runUpdateCheck(true);
+        }
+
+        if (updateEnabled && updateIntervalMs > 0) {
+            // First background check shortly after page load, then on the
+            // configured interval. This never blocks page rendering.
+            setTimeout(() => runUpdateCheck(false), 3000);
+            setInterval(() => runUpdateCheck(false), updateIntervalMs);
+        }
     </script>
 </body>
 
