@@ -219,25 +219,34 @@ function renderMultiLineAsImage($text, $fontSize = 17, $align = 'left', $width =
             continue;
         }
 
-        // KOT Table Header Line: "# ... Qty ... Item"
-        if (preg_match('/^#\s+(Qty\s+Item|Item\s+Qty)/i', $trimmed)) {
-            imagettftext($im, $fontSize, 0, 10, $y, $black, $fontFile, '#');
-            imagettftext($im, $fontSize, 0, 65, $y, $black, $fontFile, 'Qty');
-            imagettftext($im, $fontSize, 0, 190, $y, $black, $fontFile, 'Item');
+        // KOT Table Header Line: "Qty ... Item" (no serial number)
+        if (preg_match('/^(#\s+)?(Qty\s+Item|Item\s+Qty)/i', $trimmed) || preg_match('/^Qty\s+Item/i', $trimmed)) {
+            imagettftext($im, $fontSize, 0, 10, $y, $black, $fontFile, 'Qty');
+            imagettftext($im, $fontSize, 0, 100, $y, $black, $fontFile, 'Item');
 
             $y += $lineHeight;
             continue;
         }
 
-        // KOT Item Line: "#   Qty   Item Name"
+        // KOT Item Line without Serial No: "Qty   Item Name"
+        if (preg_match('/^\s*(\d+)\s{2,}(.+)$/u', $line, $m) && !preg_match('/^\s*(\d+)\s+(\d+)\s+(.+)$/u', $line)) {
+            $qtyStr = trim($m[1]);
+            $itemStr = shape_arabic_text(trim($m[2]), 45);
+
+            imagettftext($im, $fontSize, 0, 10, $y, $black, $fontFile, $qtyStr);
+            imagettftext($im, $fontSize, 0, 100, $y, $black, $fontFile, $itemStr);
+
+            $y += $lineHeight;
+            continue;
+        }
+
+        // KOT Item Line with legacy Serial No: "#   Qty   Item Name" (fallback)
         if (preg_match('/^\s*(\d+)\s+(\d+)\s+(.+)$/u', $line, $m)) {
-            $numStr = trim($m[1]);
             $qtyStr = trim($m[2]);
             $itemStr = shape_arabic_text(trim($m[3]), 45);
 
-            imagettftext($im, $fontSize, 0, 10, $y, $black, $fontFile, $numStr);
-            imagettftext($im, $fontSize, 0, 65, $y, $black, $fontFile, $qtyStr);
-            imagettftext($im, $fontSize, 0, 190, $y, $black, $fontFile, $itemStr);
+            imagettftext($im, $fontSize, 0, 10, $y, $black, $fontFile, $qtyStr);
+            imagettftext($im, $fontSize, 0, 100, $y, $black, $fontFile, $itemStr);
 
             $y += $lineHeight;
             continue;
@@ -246,7 +255,7 @@ function renderMultiLineAsImage($text, $fontSize = 17, $align = 'left', $width =
         // KOT Indented Modifiers or Notes
         if (preg_match('/^\s{4,}(.+)$/u', $line, $m)) {
             $detailStr = shape_arabic_text(trim($m[1]), 45);
-            imagettftext($im, $fontSize, 0, 190, $y, $black, $fontFile, $detailStr);
+            imagettftext($im, $fontSize, 0, 100, $y, $black, $fontFile, $detailStr);
             $y += $lineHeight;
             continue;
         }
@@ -588,7 +597,7 @@ if ($printType === 'KOT') {
     $commands .= "------------------------------------------------" . "\x0A";
 
     // Items header
-    $commands .= str_pad("#", 4) . str_pad("Qty", 12) . str_pad("Item", 21) . "\x0A";
+    $commands .= str_pad("Qty", 8) . str_pad("Item", 32) . "\x0A";
     $commands .= "------------------------------------------------" . "\x0A";
 
     // Parse and print items
@@ -603,7 +612,7 @@ if ($printType === 'KOT') {
                 continue;
             if (preg_match('/^-+$/', $trimmed))
                 continue;
-            if (preg_match('/^#\s+(Item|Qty)/i', $trimmed))
+            if (preg_match('/^(#|Qty)\s+(Item|Qty)/i', $trimmed))
                 continue;
             if (stripos($trimmed, 'total items:') !== false) {
                 if (preg_match('/(\d+)\s*$/', $trimmed, $m)) {
