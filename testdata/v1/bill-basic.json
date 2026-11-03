@@ -1,0 +1,6 @@
+{"type":"windows","connection_type":"php_print_server","printer_ip_address":"192.168.1.20","printer_port":9100,"path":"POS-80C",
+ "sale_no_p":"ORD-1042","date":"03-11-2026","time_inv":"08:15 PM","customer_name":"Ravi K","store_name":"Sample Cafe",
+ "address":"MG Road, Kochi\r\nKerala 682001\n\n","phone":"9876543210","print_bill_logo":"No",
+ "items":"Item              Rate  Qty   Total\n------------------------------------------------\nChicken Biryani  180.00   2  360.00\nLime Juice        40.00   1   40.00\n",
+ "totals":"------------------------------------------------\nSubtotal                        400.00\nTax 5%                           20.00\nGrand Total (₹)                 420.00\n",
+ "payments":"Cash                            500.00\nBalance                          80.00\n","invoice_footer":"Thank you! Visit again"}

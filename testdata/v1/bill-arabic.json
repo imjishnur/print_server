@@ -1,0 +1,4 @@
+{"sale_no_p":"QA-12","date":"03-11-2026","time_inv":"07:45 PM","customer_name":"محمد","store_name":"Sample Restaurant","print_bill_logo":"No",
+ "address":"الدوحة، قطر","phone":"+974 5555 1234",
+ "items":"Item              Rate  Qty   Total\n------------------------------------------------\nشاورما دجاج   15.00   2   30.00\nPepsi              5.00   1    5.00\n",
+ "totals":"Order Type: Dine In\nTotal  35.00\n","payments":"Cash  35.00\n","invoice_footer":"شكرا لزيارتكم"}

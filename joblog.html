@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Print Log</title>
+<style>
+:root {
+  --bg: #f8fafc; --card: #ffffff; --line: #e2e8f0; --text: #0f172a; --muted: #64748b;
+  --accent: #2563eb; --ok: #15803d; --ok-bg: #dcfce7; --err: #b91c1c; --err-bg: #fee2e2; --sel: #eff6ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 18px; margin: 0; }
+header .muted { flex: 1; }
+.muted { color: var(--muted); font-size: 12px; }
+a { color: var(--accent); }
+button { font: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+main { display: grid; grid-template-columns: minmax(360px, 44%) 1fr; height: calc(100vh - 53px); }
+#list { overflow-y: auto; border-right: 1px solid var(--line); background: var(--card); }
+table { width: 100%; border-collapse: collapse; }
+th { position: sticky; top: 0; background: var(--card); text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+tr.job { cursor: pointer; }
+tr.job:hover { background: #f8fafc; }
+tr.job.selected { background: var(--sel); }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+.ok { background: var(--ok-bg); color: var(--ok); }
+.err { background: var(--err-bg); color: var(--err); }
+.type { background: #e0e7ff; color: #3730a3; }
+.kind { background: #f1f5f9; color: var(--muted); }
+#detail { overflow-y: auto; padding: 16px 20px; }
+#empty { color: var(--muted); padding: 40px; text-align: center; }
+.meta { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin-bottom: 14px; }
+.meta div:nth-child(odd) { color: var(--muted); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; }
+.tabs button.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+.paper { background: #e5e7eb; padding: 16px; border-radius: 8px; overflow-x: auto; }
+.paper canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: 100%; height: auto; }
+pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow: auto; font: 12px/1.5 Consolas, monospace; margin: 0; white-space: pre; }
+.fields td:first-child { color: var(--muted); width: 160px; }
+.fields { margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.toolbar .muted { flex: 1; }
+img.input { max-width: 100%; border: 1px solid var(--line); }
+@media (max-width: 800px) { main { grid-template-columns: 1fr; height: auto; } #list { max-height: 45vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Print Log</h1>
+  <span class="muted">Last 100 print jobs since the app started · this PC only · <a href="/print_server/">status page</a></span>
+  <label class="muted"><input type="checkbox" id="auto" checked> auto refresh</label>
+  <button id="refresh">Refresh</button>
+</header>
+<main>
+  <div id="list">
+    <table>
+      <thead><tr><th>Time</th><th>Job</th><th>Printer</th><th>Result</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="noJobs" class="muted" style="padding:20px;display:none">No print jobs yet. Print a KOT or bill from the POS.</div>
+  </div>
+  <div id="detail"><div id="empty">Select a print job to see the JSON sent and how the receipt looks.</div></div>
+</main>
+
+<script>
+'use strict';
+let selectedId = null;
+let current = null;
+let activeTab = 'preview';
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return e;
+}
+function badge(text, cls) { return el('span', { class: 'badge ' + cls }, text); }
+function fmtTime(t) { const d = new Date(t); return d.toLocaleTimeString() + '\n' + d.toLocaleDateString(); }
+function kb(n) { return n > 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B'; }
+
+async function loadList() {
+  let jobs = [];
+  try { jobs = await (await fetch('/print_server/agent/jobs')).json(); } catch (e) { return; }
+  const rows = document.getElementById('rows');
+  rows.replaceChildren(...jobs.map(j => {
+    const tr = el('tr', { class: 'job' + (j.id === selectedId ? ' selected' : ''), onclick: () => select(j.id) },
+      el('td', { class: 'muted', style: 'white-space:pre' }, fmtTime(j.time)),
+      el('td', {}, badge(j.print_type || '?', 'type'), ' ', badge(j.kind, 'kind'), el('div', {}, j.order_no ? '#' + j.order_no : '')),
+      el('td', {}, j.printer || '-', el('div', { class: 'muted' }, j.method || '')),
+      el('td', {}, j.success ? badge('Printed', 'ok') : badge('Failed', 'err'), el('div', { class: 'muted' }, j.duration_ms + ' ms'))
+    );
+    return tr;
+  }));
+  document.getElementById('noJobs').style.display = jobs.length ? 'none' : 'block';
+}
+
+async function select(id) {
+  selectedId = id;
+  history.replaceState(null, '', '#job-' + id);
+  document.querySelectorAll('tr.job').forEach(tr => tr.classList.remove('selected'));
+  loadList();
+  const res = await fetch('/print_server/agent/jobs/' + id);
+  if (!res.ok) { document.getElementById('detail').replaceChildren(el('div', { id: 'empty' }, 'This job is no longer in the log.')); return; }
+  current = await res.json();
+  renderDetail();
+}
+
+function renderDetail() {
+  const j = current.job;
+  const detail = document.getElementById('detail');
+  const meta = el('div', { class: 'meta' },
+    el('div', {}, 'Result'), el('div', {}, j.success ? badge('Printed', 'ok') : badge('Failed', 'err'), j.error ? ' ' + j.error : ''),
+    el('div', {}, 'Type'), el('div', {}, (j.print_type || '?') + ({ v2: ' · v2 (image from browser)', test: ' · test print from the status page' }[j.kind] || ' · v1 (text receipt)')),
+    el('div', {}, 'Order'), el('div', {}, j.order_no || '-'),
+    el('div', {}, 'Printer'), el('div', {}, (j.printer || '-') + (j.method ? ' · via ' + j.method : '')),
+    el('div', {}, 'From'), el('div', {}, (['::1', '127.0.0.1'].includes(j.remote) ? 'this PC' : j.remote) + ' · ' + new Date(j.time).toLocaleString() + ' · ' + j.duration_ms + ' ms'),
+    el('div', {}, 'Sent to printer'), el('div', {}, kb(j.bytes))
+  );
+  const tabs = el('div', { class: 'tabs' });
+  const body = el('div');
+  for (const [key, label] of [['preview', 'Preview'], ['request', 'JSON sent'], ['response', 'Response'], ['bytes', 'Printer bytes']]) {
+    tabs.append(el('button', { class: key === activeTab ? 'active' : '', onclick: () => { activeTab = key; renderDetail(); } }, label));
+  }
+  if (activeTab === 'preview') body.append(previewTab());
+  if (activeTab === 'request') body.append(requestTab());
+  if (activeTab === 'response') body.append(el('pre', {}, JSON.stringify(current.response, null, 2)));
+  if (activeTab === 'bytes') body.append(bytesTab());
+  detail.replaceChildren(meta, tabs, body);
+}
+
+function outputBytes() {
+  const bin = atob(current.output || '');
+  const b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  return b;
+}
+
+function previewTab() {
+  const b = outputBytes();
+  if (!b.length) return el('div', { class: 'muted' }, 'Nothing was sent to the printer for this job.');
+  return el('div', {},
+    el('div', { class: 'toolbar' }, el('span', { class: 'muted' }, 'Drawn from the ESC/POS bytes sent to the printer (80 mm, 576 dots). Printer fonts differ slightly on paper.')),
+    el('div', { class: 'paper' }, renderEscPos(b)));
+}
+
+function requestTab() {
+  const wrap = el('div');
+  const text = current.request || '';
+  let pretty = text;
+  try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
+  const form = current.form || {};
+  if (Object.keys(form).length) {
+    const t = el('table', { class: 'fields' });
+    for (const [k, v] of Object.entries(form)) t.append(el('tr', {}, el('td', {}, k), el('td', {}, v)));
+    wrap.append(el('div', { class: 'muted', style: 'margin-bottom:4px' }, 'POST fields'), t);
+  }
+  if (current.image) {
+    wrap.append(el('div', { class: 'muted', style: 'margin-bottom:4px' }, 'image_base64 (receipt drawn by the browser)'),
+      el('img', { class: 'input', src: 'data:image/png;base64,' + current.image.replace(/^data:image\/\w+;base64,/, '') }));
+  }
+  if (text) {
+    wrap.append(el('div', { class: 'toolbar', style: 'margin-top:12px' },
+      el('span', { class: 'muted' }, 'content_data (' + kb(text.length) + ')'),
+      el('button', { onclick: e => { navigator.clipboard.writeText(pretty); e.target.textContent = 'Copied'; } }, 'Copy JSON')),
+      el('pre', {}, pretty));
+  }
+  if (!text && !current.image && !Object.keys(form).length) wrap.append(el('div', { class: 'muted' }, 'No data was received.'));
+  return wrap;
+}
+
+function bytesTab() {
+  const b = outputBytes();
+  const limit = Math.min(b.length, 8192);
+  const lines = [];
+  for (let off = 0; off < limit; off += 16) {
+    const chunk = b.subarray(off, Math.min(off + 16, limit));
+    const hex = Array.from(chunk, x => x.toString(16).padStart(2, '0')).join(' ');
+    const ascii = Array.from(chunk, x => (x >= 32 && x < 127 ? String.fromCharCode(x) : '.')).join('');
+    lines.push(off.toString(16).padStart(6, '0') + '  ' + hex.padEnd(48) + '  ' + ascii);
+  }
+  if (b.length > limit) lines.push('… ' + (b.length - limit) + ' more bytes');
+  return el('pre', {}, lines.join('\n') || '(empty)');
+}
+
+// ── ESC/POS preview ──────────────────────────────────────────────
+// Font A: 12x24 dots, 48 columns on 576 dots. Supports the commands the
+// print server sends: ESC @ a ! E d p 3 2 * t, GS ! v0 V, LF.
+function renderEscPos(b) {
+  const W = 576, CW = 12, CH = 24, MAXH = 40000;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = MAXH;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, MAXH);
+  ctx.textBaseline = 'alphabetic';
+
+  let y = 12, align = 0, bold = false, dw = 1, dh = 1, spacing = 30;
+  let line = [];
+  let textBuf = [];
+  let noteY = -1, noteOffset = 0;
+  const decoder = new TextDecoder('utf-8');
+
+  const alignX = w => (align === 1 ? Math.max(0, (W - w) / 2) : align === 2 ? Math.max(0, W - w) : 0);
+
+  function flushText() {
+    if (!textBuf.length) return;
+    const s = decoder.decode(new Uint8Array(textBuf));
+    textBuf = [];
+    for (const ch of s) {
+      const used = line.reduce((n, c) => n + c.dw, 0);
+      if (used + dw > 48) printLine();
+      line.push({ ch, bold, dw, dh });
+    }
+  }
+  function printLine() {
+    const maxDh = line.reduce((m, c) => Math.max(m, c.dh), 1);
+    if (line.length) {
+      const width = line.reduce((n, c) => n + c.dw * CW, 0);
+      let x = alignX(width);
+      ctx.fillStyle = '#000';
+      for (const c of line) {
+        ctx.save();
+        ctx.translate(x, y + CH * maxDh - 5 * c.dh);
+        ctx.scale(c.dw, c.dh);
+        ctx.font = (c.bold ? 'bold ' : '') + '20px "Courier New", Consolas, monospace';
+        ctx.fillText(c.ch, 0, 0);
+        ctx.restore();
+        x += CW * c.dw;
+      }
+      y += Math.max(spacing, CH * maxDh + 6);
+    } else {
+      y += spacing;
+    }
+    line = [];
+  }
+  function note(text) {
+    // Notes at the same position (e.g. drawer pin 2 and pin 5) are stacked
+    noteOffset = noteY === y ? noteOffset + 14 : 0;
+    noteY = y;
+    ctx.save();
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '12px "Segoe UI", Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(text, W - 6, y + 12 + noteOffset);
+    ctx.restore();
+  }
+  function cut() {
+    if (line.length) printLine();
+    y += 10;
+    ctx.save();
+    ctx.strokeStyle = '#9ca3af'; ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke();
+    ctx.fillStyle = '#9ca3af'; ctx.font = '12px "Segoe UI", Arial, sans-serif';
+    ctx.fillText('✂ cut', 6, y - 4);
+    ctx.restore();
+    y += 20;
+  }
+  function raster(x0, top, bytesPerRow, rows, data, offset) {
+    const w = bytesPerRow * 8;
+    const img = ctx.createImageData(w, rows);
+    for (let r = 0; r < rows; r++) {
+      for (let x = 0; x < w; x++) {
+        const on = data[offset + r * bytesPerRow + (x >> 3)] & (0x80 >> (x & 7));
+        const p = (r * w + x) * 4;
+        const v = on ? 0 : 255;
+        img.data[p] = img.data[p + 1] = img.data[p + 2] = v;
+        img.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, x0, top);
+  }
+
+  for (let i = 0; i < b.length && y < MAXH - 200; i++) {
+    const c = b[i];
+    if (c === 0x1B) {
+      flushText();
+      const n = b[i + 1];
+      if (n === 0x40) { align = 0; bold = false; dw = dh = 1; spacing = 30; i += 1; }
+      else if (n === 0x61) { const v = b[i + 2]; align = v >= 48 ? v - 48 : v; i += 2; }
+      else if (n === 0x21) { const m = b[i + 2]; bold = !!(m & 0x08); dh = m & 0x10 ? 2 : 1; dw = m & 0x20 ? 2 : 1; i += 2; }
+      else if (n === 0x45) { bold = !!(b[i + 2] & 1); i += 2; }
+      else if (n === 0x64) { if (line.length) printLine(); y += spacing * b[i + 2]; i += 2; }
+      else if (n === 0x70) { note('cash drawer opens (pin ' + (b[i + 2] === 1 ? 5 : 2) + ')'); i += 4; }
+      else if (n === 0x33) { spacing = b[i + 2]; i += 2; }
+      else if (n === 0x32) { spacing = 30; i += 1; }
+      else if (n === 0x74) { i += 2; }
+      else if (n === 0x2A) {
+        // ESC * m nL nH: column bit-image (logo), 24-dot modes use 3 bytes per column
+        const m = b[i + 2], w = b[i + 3] | (b[i + 4] << 8);
+        const per = m >= 32 ? 3 : 1;
+        if (line.length) printLine();
+        const x0 = alignX(w);
+        const img = ctx.createImageData(w, per * 8);
+        for (let x = 0; x < w; x++) {
+          for (let k = 0; k < per; k++) {
+            const byte = b[i + 5 + x * per + k];
+            for (let bit = 0; bit < 8; bit++) {
+              const p = ((k * 8 + bit) * w + x) * 4;
+              const v = byte & (0x80 >> bit) ? 0 : 255;
+              img.data[p] = img.data[p + 1] = img.data[p + 2] = v;
+              img.data[p + 3] = 255;
+            }
+          }
+        }
+        ctx.putImageData(img, x0, y);
+        i += 4 + w * per;
+      }
+      else { i += 1; }
+    } else if (c === 0x1D) {
+      flushText();
+      const n = b[i + 1];
+      if (n === 0x76 && b[i + 2] === 0x30) {
+        const bpr = b[i + 4] | (b[i + 5] << 8), rows = b[i + 6] | (b[i + 7] << 8);
+        if (line.length) printLine();
+        raster(alignX(bpr * 8), y, bpr, rows, b, i + 8);
+        y += rows;
+        i += 7 + bpr * rows;
+      } else if (n === 0x56) {
+        const m = b[i + 2];
+        cut();
+        i += (m === 65 || m === 66) ? 3 : 2;
+      } else if (n === 0x21) {
+        const m = b[i + 2]; dw = ((m >> 4) & 7) + 1; dh = (m & 7) + 1; i += 2;
+      } else { i += 1; }
+    } else if (c === 0x0A) {
+      flushText();
+      printLine();
+    } else if (c === 0x0D) {
+      // CR: ignored, LF moves to the next line
+    } else {
+      textBuf.push(c);
+    }
+  }
+  flushText();
+  if (line.length) printLine();
+
+  const out = document.createElement('canvas');
+  out.width = W; out.height = Math.min(MAXH, y + 16);
+  out.getContext('2d').drawImage(canvas, 0, 0);
+  return out;
+}
+
+document.getElementById('refresh').addEventListener('click', loadList);
+setInterval(() => { if (document.getElementById('auto').checked) loadList(); }, 3000);
+const linked = /^#job-(\d+)(?:-(\w+))?$/.exec(location.hash);
+if (linked) { if (linked[2]) activeTab = linked[2]; select(Number(linked[1])); } else loadList();
+</script>
+</body>
+</html>
