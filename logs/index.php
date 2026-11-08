@@ -5,6 +5,9 @@
  * Data: logs/data/YYYY-MM-DD.jsonl + logs/data/jobs/<id>.png|json (written by include/print_logger.php)
  */
 
+require_once __DIR__ . '/../include/print_logger.php';
+plog_timezone(); // same local time as the logger
+
 $dataDir = __DIR__ . '/data';
 $cfg = is_file(__DIR__ . '/../config.php') ? (array) include __DIR__ . '/../config.php' : [];
 

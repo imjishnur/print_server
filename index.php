@@ -56,6 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+require_once __DIR__ . '/include/print_logger.php';
+plog_timezone(); // "today" in local time, same as the logs
+
 $serverIp = getServerIP();
 $printers = getConnectedPrinters();
 $cfg = is_file(__DIR__ . '/config.php') ? (array) include __DIR__ . '/config.php' : [];

@@ -27,6 +27,36 @@ function plog_dir()
 }
 
 /**
+ * Use the shop's local time for logs: config 'timezone' if set, else this PC's Windows timezone
+ * (XAMPP's php.ini usually says Europe/Berlin). The Windows lookup is cached for a day.
+ */
+function plog_timezone()
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $tz = (string) (plog_config()['timezone'] ?? '');
+
+    if ($tz === '' && strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        $cache = plog_dir() . '/.timezone';
+        if (is_file($cache) && filemtime($cache) > time() - 86400) {
+            $tz = trim((string) @file_get_contents($cache));
+        } elseif (class_exists('IntlTimeZone')) {
+            $win = trim((string) @shell_exec('tzutil /g'));
+            $tz = $win !== '' ? (string) \IntlTimeZone::getIDForWindowsID($win) : '';
+            if ($tz !== '' && (is_dir(plog_dir()) || @mkdir(plog_dir(), 0777, true))) {
+                @file_put_contents($cache, $tz);
+            }
+        }
+    }
+    if ($tz !== '' && in_array($tz, timezone_identifiers_list(\DateTimeZone::ALL_WITH_BC), true)) {
+        date_default_timezone_set($tz);
+    }
+}
+
+/**
  * Start logging a job. Call before including printer_load.php / printer_load_v2.php.
  *
  * @param string      $version     'v1' or 'v2'
@@ -42,6 +72,7 @@ function plog_begin($version, $printType, $data, $imageBase64 = null)
     }
 
     try {
+        plog_timezone();
         $dir = plog_dir();
         $jobs = $dir . '/jobs';
         if (!is_dir($jobs) && !@mkdir($jobs, 0777, true)) {

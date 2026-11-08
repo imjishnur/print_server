@@ -19,4 +19,5 @@ return [
     // Print logs: every print job is saved with a preview, see /logs
     'logs_enabled' => true,
     'log_days' => 7, // logs older than this are deleted
+    'timezone' => '', // e.g. 'Asia/Qatar'; empty = this PC's Windows timezone
 ];
