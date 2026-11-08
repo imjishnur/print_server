@@ -41,7 +41,6 @@ function v1Preview($d, $type)
     } elseif ($docType === 'BILL' || $docType === 'INVOICE') {
         $out[] = $line;
         $out[] = $center('*** ' . $docType . ' ***');
-        $out[] = $center($docType === 'BILL' ? 'فاتورة مبدئية' : 'فاتورة');
     }
     $out[] = $line;
     if (!empty($d['sale_no_p'])) {

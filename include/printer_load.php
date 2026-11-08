@@ -780,7 +780,6 @@ if ($printType === 'BILL' || $printType === 'INVOICE') {
         $commands .= $esc . "a\x01" . $esc . "E\x01";
         $commands .= escText('*** ' . $docType . ' ***', 'center', 22);
         $commands .= $esc . "E\x00";
-        $commands .= escText($docType === 'BILL' ? 'فاتورة مبدئية' : 'فاتورة', 'center', 22);
     }
 
     // Separator line

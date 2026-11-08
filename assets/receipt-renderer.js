@@ -119,19 +119,56 @@
                 return rowY + (opts.lineHeight || 27);
             }
 
-            // 2. Store Name (Centered, Bold, Large)
-            if (batch.store_name) {
-                ctx.font = 'bold 26px ' + fontMain;
-                ctx.textAlign = 'center';
-                y = wrapCenteredText(ctx, batch.store_name, paperWidth / 2, y, contentWidth, 32);
+            // Wrap text (keeping its line breaks) to a width; returns the lines
+            function wrapToLines(text, maxW) {
+                var out = [];
+                String(text || '').split(/\r?\n/).forEach(function (part) {
+                    var words = part.trim().split(/\s+/), line = '';
+                    for (var wi = 0; wi < words.length; wi++) {
+                        if (!words[wi]) continue;
+                        var test = line ? line + ' ' + words[wi] : words[wi];
+                        if (ctx.measureText(test).width > maxW && line) { out.push(line); line = words[wi]; } else { line = test; }
+                    }
+                    if (line) out.push(line);
+                });
+                return out;
+            }
+
+            var hasArabicHeader = !isKot && (batch.store_name_ar || batch.address_ar);
+            if (hasArabicHeader) {
+                // 2+3. Bilingual header: English name + address on the left, Arabic on the right
+                var colGap = 16;
+                var colW = (contentWidth - colGap) / 2;
+                var drawColumn = function (name, address, rtl) {
+                    var cy = y;
+                    var x = rtl ? paperWidth - padding : padding;
+                    ctx.direction = rtl ? 'rtl' : 'ltr';
+                    ctx.textAlign = rtl ? 'right' : 'left';
+                    ctx.font = 'bold 22px ' + fontMain;
+                    wrapToLines(name, colW).forEach(function (l) { ctx.fillText(l, x, cy); cy += 28; });
+                    ctx.font = '17px ' + fontMain;
+                    wrapToLines(address, colW).forEach(function (l) { ctx.fillText(l, x, cy); cy += 22; });
+                    ctx.direction = 'ltr';
+                    return cy;
+                };
+                var leftEnd = drawColumn(batch.store_name, batch.address, false);
+                var rightEnd = drawColumn(batch.store_name_ar, batch.address_ar, true);
+                y = Math.max(leftEnd, rightEnd) + 4;
+            } else {
+                // 2. Store Name (Centered, Bold, Large)
+                if (batch.store_name) {
+                    ctx.font = 'bold 26px ' + fontMain;
+                    ctx.textAlign = 'center';
+                    y = wrapCenteredText(ctx, batch.store_name, paperWidth / 2, y, contentWidth, 32);
+                }
             }
 
             // 3. Address & Phone (skip for KOT to save paper)
             if (!isKot) {
                 ctx.font = '18px ' + fontMain;
                 ctx.textAlign = 'center';
-                if (batch.address) {
-                    y = wrapCenteredText(ctx, batch.address, paperWidth / 2, y, contentWidth, 25);
+                if (batch.address && !hasArabicHeader) {
+                    wrapToLines(batch.address, contentWidth).forEach(function (l) { ctx.fillText(l, paperWidth / 2, y); y += 25; });
                 }
                 if (batch.phone) {
                     ctx.fillText('Tel / هاتف : ' + '\u2066' + batch.phone + '\u2069', paperWidth / 2, y); // LRI..PDI keeps +974 numbers left-to-right next to Arabic
@@ -141,16 +178,31 @@
 
             // 4. Ticket Banner
             var bannerType = (type || batch.print_type || (isKot ? 'KOT' : 'INVOICE')).toUpperCase();
-            // BILL = before payment (BILL button), INVOICE = after checkout; both get the Arabic title underneath
-            var bannerAr = { BILL: 'فاتورة مبدئية', INVOICE: 'فاتورة' }[bannerType] || '';
-            y += 4;
-            ctx.font = 'bold 22px ' + fontMain;
-            ctx.textAlign = 'center';
-            ctx.fillText('*** ' + bannerType + ' ***', paperWidth / 2, y);
-            y += 28;
-            if (bannerAr && !isKot) {
-                ctx.font = 'bold 21px ' + fontMain;
-                ctx.fillText(bannerAr, paperWidth / 2, y);
+            // BILL = before payment (BILL button), INVOICE = after checkout.
+            // Bill / invoice heading on one line: Arabic on the left, bold English on the right ("فاتورة  INVOICE")
+            var bannerAr = !isKot ? ({ BILL: 'فاتورة مبدئية', INVOICE: 'فاتورة' }[bannerType] || '') : '';
+            if (bannerAr) {
+                y += 6;
+                drawDottedLine(ctx, padding, y, paperWidth - padding);
+                y += 12;
+                var enFont = 'bold 30px ' + fontMain, arFont = '30px ' + fontMain, gapW = 18;
+                ctx.font = enFont; var enW = ctx.measureText(bannerType).width;
+                ctx.font = arFont; var arW = ctx.measureText(bannerAr).width;
+                var startX = (paperWidth - (arW + gapW + enW)) / 2;
+                ctx.textAlign = 'left';
+                ctx.direction = 'rtl';
+                ctx.textAlign = 'right';
+                ctx.fillText(bannerAr, startX + arW, y);   // rtl text, right edge at startX + arW
+                ctx.direction = 'ltr';
+                ctx.textAlign = 'left';
+                ctx.font = enFont;
+                ctx.fillText(bannerType, startX + arW + gapW, y);
+                y += 40;
+            } else {
+                y += 4;
+                ctx.font = 'bold 22px ' + fontMain;
+                ctx.textAlign = 'center';
+                ctx.fillText('*** ' + bannerType + ' ***', paperWidth / 2, y);
                 y += 28;
             }
 
@@ -162,6 +214,8 @@
             if (batch.sale_no_p) y = drawRow(isKot ? 'Token / Order No' : 'Order No / رقم الطلب', batch.sale_no_p, y, { boldRight: true, size: isKot ? 21 : 19 });
             if (batch.date) y = drawRow('Date / التاريخ', batch.date + (batch.time_inv ? ' ' + batch.time_inv : ''), y);
             if (batch.sale_type) y = drawRow('Order Type / نوع الطلب', batch.sale_type, y);
+            // cashier = user who created the order (bill / invoice only)
+            if (!isKot && batch.sales_associate) y = drawRow('Cashier / الكاشير', batch.sales_associate, y);
             if (batch.customer_table) y = drawRow('Table / طاولة', batch.customer_table, y, { boldRight: true, size: 20 });
             if (batch.waiter_name) y = drawRow('Waiter / النادل', batch.waiter_name, y);
             if (batch.customer_name && !isKot) y = drawRow('Customer / العميل', batch.customer_name, y);
@@ -484,7 +538,15 @@
                     statusPill('NOT PAID / غير مدفوع');
                 } else if (batch.payment_status !== undefined) {
                     var pdv = batch.payments_data || {};
-                    if (Number(batch.paid_amount) > 0 && pdv.method) y = drawRow('Payment Method / طريقة الدفع', pdv.method, y, { size: 19 });
+                    var plist = batch.payments_list || [];
+                    if (plist.length > 1) {
+                        // split payment: one line per method (e.g. Cash + Card)
+                        for (var pi = 0; pi < plist.length; pi++) {
+                            y = drawRow(plist[pi].method + ' / ' + plist[pi].method_ar, cur + Number(plist[pi].amount).toFixed(2), y, { size: 19 });
+                        }
+                    } else if (Number(batch.paid_amount) > 0 && (plist.length ? plist[0].method : pdv.method)) {
+                        y = drawRow('Payment Method / طريقة الدفع', plist.length ? plist[0].method : pdv.method, y, { size: 19 });
+                    }
                     y = drawRow('Paid / المبلغ المدفوع', cur + Number(batch.paid_amount || 0).toFixed(2), y, { size: 19 });
                     if (Number(pdv.change) > 0) y = drawRow('Change Due / الباقي', cur + Number(pdv.change).toFixed(2), y, { size: 19, bold: true });
                     if (Number(batch.balance_due) > 0) y = drawRow('Balance Due / المبلغ المتبقي', cur + Number(batch.balance_due).toFixed(2), y, { size: 20, bold: true });
