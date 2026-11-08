@@ -99,6 +99,8 @@ if (!empty($imageBase64)) {
     $_image_base64 = $imageBase64;
     $_print_data   = $contentData ?: $postData;
     $_print_type   = $postData['print_type'] ?? ($_print_data['print_type'] ?? 'BILL');
+    require_once __DIR__ . '/include/print_logger.php';
+    plog_begin('v2', $_print_type, array_merge($postData, (array) $contentData), $_image_base64);
     include __DIR__ . '/include/printer_load_v2.php';
     exit;
 }
@@ -114,4 +116,6 @@ if ($contentData === null) {
 $_print_data = $contentData;
 $_print_type = $postData['print_type'] ?? ($contentData['print_type'] ?? 'KOT');
 
+require_once __DIR__ . '/include/print_logger.php';
+plog_begin('v1', $_print_type, $_print_data);
 include __DIR__ . '/include/printer_load.php';

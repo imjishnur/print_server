@@ -16,7 +16,11 @@ $data           = $_print_data ?? [];
 $printerIp      = $data['printer_ip'] ?? ($data['printer_ip_address'] ?? '');
 $printerPort    = (int) ($data['printer_port'] ?? 9100);
 $printerPath    = $data['path'] ?? ($data['printer_name'] ?? '');
-$openDrawer     = ($data['open_cash_drawer'] ?? '') === 'Yes' || $printType === 'BILL' || $printType === 'INVOICE';
+// The POS sends open_cash_drawer Yes/No (Master settings > Receipt & drawer) and that decides.
+// Without it (older POS pages, test prints) BILL / INVOICE open the drawer as before.
+$openDrawer     = isset($data['open_cash_drawer']) && $data['open_cash_drawer'] !== ''
+    ? strcasecmp((string) $data['open_cash_drawer'], 'Yes') === 0
+    : ($printType === 'BILL' || $printType === 'INVOICE');
 
 // 1. Decode Base64 PNG image
 $cleanBase64 = preg_replace('#^data:image/\w+;base64,#i', '', $_image_base64);
@@ -64,6 +68,7 @@ $commands   .= "\x1Ba\x01";      // Center alignment
 // Open cash drawer for BILL/Invoice
 if ($openDrawer) {
     $commands .= "\x1Bp\x00\x19\xFA"; // Pulse 50ms to pin 2
+    $commands .= "\x1Bp\x01\x19\xFA"; // and pin 5, like v1, for drawers wired to pin 5
 }
 
 for ($y = 0; $y < $imgH; $y += $chunkHeight) {

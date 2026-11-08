@@ -41,4 +41,6 @@ $_image_base64 = $imageBase64;
 $_print_data   = $contentData ?: $postData;
 $_print_type   = $postData['print_type'] ?? ($_print_data['print_type'] ?? 'BILL');
 
+require_once __DIR__ . '/include/print_logger.php';
+plog_begin('v2', $_print_type, array_merge($postData, (array) $contentData), $_image_base64);
 include __DIR__ . '/include/printer_load_v2.php';
