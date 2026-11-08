@@ -134,7 +134,7 @@
                     y = wrapCenteredText(ctx, batch.address, paperWidth / 2, y, contentWidth, 25);
                 }
                 if (batch.phone) {
-                    ctx.fillText('Tel / هاتف : ' + '⁦' + batch.phone + '⁩', paperWidth / 2, y); // LRI..PDI keeps +974 numbers left-to-right next to Arabic
+                    ctx.fillText('Tel / هاتف : ' + '\u2066' + batch.phone + '\u2069', paperWidth / 2, y); // LRI..PDI keeps +974 numbers left-to-right next to Arabic
                     y += 25;
                 }
             }
