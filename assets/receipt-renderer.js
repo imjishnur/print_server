@@ -170,7 +170,30 @@
             var colQtyX = 430;
             var colTotalX = paperWidth - padding - 4;
 
-            // Bill: two-line header (English on top, Arabic underneath); KOT: unchanged single line
+            // KOT columns: Qty first, then the item name (wrapped to the paper width)
+            var kotNameX = padding + 130;
+            var kotNameW = paperWidth - padding - kotNameX;
+            function kotText(text, startY, font, lineH) {
+                ctx.font = font;
+                ctx.textAlign = 'left';
+                var words = String(text).split(' ');
+                var line = '';
+                var ly = startY;
+                for (var w = 0; w < words.length; w++) {
+                    var test = line ? line + ' ' + words[w] : words[w];
+                    if (ctx.measureText(test).width > kotNameW && line) {
+                        ctx.fillText(line, kotNameX, ly);
+                        ly += lineH;
+                        line = words[w];
+                    } else {
+                        line = test;
+                    }
+                }
+                if (line) ctx.fillText(line, kotNameX, ly);
+                return ly + lineH;
+            }
+
+            // Bill: two-line header (English on top, Arabic underneath); KOT: single line
             var headerH = isKot ? 30 : 52;
             ctx.fillStyle = '#f2f2f2';
             ctx.fillRect(padding, y, contentWidth, headerH);
@@ -192,10 +215,10 @@
                     ctx.fillText(billHeaders[h][1], billHeaders[h][2], y + 27);
                 }
             } else {
+                // KOT: quantity is the first column, the item name follows
                 ctx.textAlign = 'left';
-                ctx.fillText('Item / الصنف', colItemX, y + 5);
-                ctx.textAlign = 'right';
-                ctx.fillText('Qty / الكمية', colTotalX, y + 5);
+                ctx.fillText('Qty / الكمية', colItemX, y + 5);
+                ctx.fillText('Item / الصنف', kotNameX, y + 5);
             }
 
             drawDottedLine(ctx, padding, y, paperWidth - padding);
@@ -208,6 +231,25 @@
             if (hasStructuredItems) {
                 for (var i = 0; i < batch.items_list.length; i++) {
                     var itm = batch.items_list[i];
+
+                    if (isKot) {
+                        // KOT row: qty in the first column, name / modifiers / note in the item column
+                        ctx.fillStyle = '#000000';
+                        ctx.font = 'bold 24px ' + fontMain;
+                        ctx.textAlign = 'left';
+                        ctx.fillText(String(itm.qty || 1), colItemX, y);
+                        y = kotText(itm.name + (itm.variant ? ' [' + itm.variant + ']' : ''), y, 'bold 22px ' + fontMain, 28);
+                        ctx.fillStyle = '#222222';
+                        for (var km = 0; itm.modifiers && km < itm.modifiers.length; km++) {
+                            y = kotText(itm.modifiers[km], y, '18px ' + fontMain, 23);
+                        }
+                        if (itm.notes) {
+                            y = kotText('* ' + itm.notes, y, 'italic 18px ' + fontMain, 23);
+                        }
+                        ctx.fillStyle = '#000000';
+                        y += 6;
+                        continue;
+                    }
 
                     // Item Title (Bold)
                     ctx.font = (isKot ? 'bold 22px ' : 'bold 20px ') + fontMain;
@@ -288,6 +330,37 @@
                         continue;
                     }
                     if (rLine.indexOf('Order Type :') !== -1 || rLine.indexOf('Item') === 0) {
+                        continue;
+                    }
+
+                    if (isKot) {
+                        // KOT text from the POS: "4       Burger Deluxe" rows, indented "[+ modifier]" lines
+                        var kRow = /^(\d+(?:\.\d+)?)\s{2,}(.+)$/.exec(rLine);
+                        var kTotal = /^Total Items:\s*(.*)$/i.exec(rLine);
+                        ctx.fillStyle = '#000000';
+                        if (kRow) {
+                            ctx.font = 'bold 24px ' + fontMain;
+                            ctx.textAlign = 'left';
+                            ctx.fillText(kRow[1], colItemX, y);
+                            y = kotText(kRow[2], y, 'bold 22px ' + fontMain, 28);
+                        } else if (kTotal) {
+                            // count in the Qty column, label in the Item column (keeps Arabic and the number apart)
+                            ctx.font = 'bold 24px ' + fontMain;
+                            ctx.textAlign = 'left';
+                            ctx.fillText(kTotal[1].trim(), colItemX, y);
+                            ctx.font = 'bold 20px ' + fontMain;
+                            ctx.fillText('Total Items / إجمالي الأصناف', kotNameX, y + 2);
+                            y += 30;
+                        } else if (/^\s/.test(rawLines[r])) {
+                            ctx.fillStyle = '#222222';
+                            y = kotText(rLine, y, '18px ' + fontMain, 23);
+                            ctx.fillStyle = '#000000';
+                        } else {
+                            ctx.font = 'bold 20px ' + fontMain;
+                            ctx.textAlign = 'left';
+                            ctx.fillText(rLine, colItemX, y);
+                            y += 26;
+                        }
                         continue;
                     }
 
