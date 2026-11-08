@@ -591,6 +591,27 @@
                     }
                 }
 
+                // 11b. Thank-you message (Master settings > Thanks message): each line as typed, centered;
+                // Arabic lines right-to-left
+                if (batch.thanks_message) {
+                    y += 10;
+                    drawDottedLine(ctx, padding, y, paperWidth - padding);
+                    y += 16;
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.font = 'bold 21px ' + fontMain;
+                    String(batch.thanks_message).split(/\r?\n/).forEach(function (tl) {
+                        tl = tl.trim();
+                        if (!tl) { y += 10; return; }
+                        // direction from the first letter (like dir="auto"): mixed lines keep the typed order
+                        var firstLetter = tl.match(/[A-Za-z؀-ۿ]/);
+                        ctx.direction = firstLetter && hasArabic(firstLetter[0]) ? 'rtl' : 'ltr';
+                        y = wrapCenteredText(ctx, tl, paperWidth / 2, y, contentWidth, 28);
+                    });
+                    ctx.direction = 'ltr';
+                    y += 4;
+                }
+
                 // 12. Powered by (bill and invoice only, not KOT)
                 y += 14;
                 ctx.font = '15px ' + fontMain;
