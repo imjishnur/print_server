@@ -43,9 +43,42 @@ function plog_timezone()
         $cache = plog_dir() . '/.timezone';
         if (is_file($cache) && filemtime($cache) > time() - 86400) {
             $tz = trim((string) @file_get_contents($cache));
-        } elseif (class_exists('IntlTimeZone')) {
+        } else {
             $win = trim((string) @shell_exec('tzutil /g'));
-            $tz = $win !== '' ? (string) \IntlTimeZone::getIDForWindowsID($win) : '';
+            // XAMPP usually has no intl extension, so the common Windows zones are mapped here
+            $map = [
+                'Arab Standard Time' => 'Asia/Qatar',          // Qatar, Kuwait, Bahrain, Saudi Arabia
+                'Arabian Standard Time' => 'Asia/Dubai',       // UAE, Oman
+                'Arabic Standard Time' => 'Asia/Baghdad',
+                'India Standard Time' => 'Asia/Kolkata',
+                'Pakistan Standard Time' => 'Asia/Karachi',
+                'Bangladesh Standard Time' => 'Asia/Dhaka',
+                'Sri Lanka Standard Time' => 'Asia/Colombo',
+                'Nepal Standard Time' => 'Asia/Kathmandu',
+                'Afghanistan Standard Time' => 'Asia/Kabul',
+                'Iran Standard Time' => 'Asia/Tehran',
+                'Egypt Standard Time' => 'Africa/Cairo',
+                'Jordan Standard Time' => 'Asia/Amman',
+                'Turkey Standard Time' => 'Europe/Istanbul',
+                'E. Africa Standard Time' => 'Africa/Nairobi',
+                'South Africa Standard Time' => 'Africa/Johannesburg',
+                'Morocco Standard Time' => 'Africa/Casablanca',
+                'Myanmar Standard Time' => 'Asia/Yangon',
+                'SE Asia Standard Time' => 'Asia/Bangkok',
+                'Singapore Standard Time' => 'Asia/Singapore',
+                'China Standard Time' => 'Asia/Shanghai',
+                'Tokyo Standard Time' => 'Asia/Tokyo',
+                'AUS Eastern Standard Time' => 'Australia/Sydney',
+                'GMT Standard Time' => 'Europe/London',
+                'W. Europe Standard Time' => 'Europe/Berlin',
+                'Eastern Standard Time' => 'America/New_York',
+                'Pacific Standard Time' => 'America/Los_Angeles',
+                'UTC' => 'UTC',
+            ];
+            $tz = $map[$win] ?? '';
+            if ($tz === '' && $win !== '' && class_exists('IntlTimeZone')) {
+                $tz = (string) \IntlTimeZone::getIDForWindowsID($win);
+            }
             if ($tz !== '' && (is_dir(plog_dir()) || @mkdir(plog_dir(), 0777, true))) {
                 @file_put_contents($cache, $tz);
             }
