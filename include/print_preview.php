@@ -33,9 +33,21 @@ function v1Preview($d, $type)
         foreach (explode("\n", plain($d['address'] ?? '')) as $a) if (trim($a) !== '') $out[] = $center($a);
         if (!empty($d['phone'])) $out[] = $center('Mob : ' . $d['phone']);
     }
-    $out[] = $center('*** ' . $type . ' ***');
+    // bills: printer_load.php prints a title only when the POS sends doc_type (BILL / INVOICE)
+    $docType = strtoupper((string) ($d['doc_type'] ?? ''));
+    $isBillJob = $type === 'BILL' || $type === 'INVOICE';
+    if (!$isBillJob) {
+        $out[] = $center('*** ' . $type . ' ***');
+    } elseif ($docType === 'BILL' || $docType === 'INVOICE') {
+        $out[] = $line;
+        $out[] = $center('*** ' . $docType . ' ***');
+        $out[] = $center($docType === 'BILL' ? 'فاتورة مبدئية' : 'فاتورة');
+    }
     $out[] = $line;
-    if (!empty($d['sale_no_p'])) $out[] = $row('Order No: ' . $d['sale_no_p'], trim(($d['date'] ?? '') . ' ' . ($d['time_inv'] ?? '')));
+    if (!empty($d['sale_no_p'])) {
+        $label = !$isBillJob ? 'Order No: ' : ($docType === 'BILL' ? 'Bill #   : ' : 'Invoice #: ');
+        $out[] = $row($label . $d['sale_no_p'], trim(($d['date'] ?? '') . ' ' . ($d['time_inv'] ?? '')));
+    }
     if (!empty($d['customer_table'])) $out[] = 'Table    : ' . $d['customer_table'];
     if (!empty($d['waiter_name'])) $out[] = 'Waiter   : ' . $d['waiter_name'];
     if (!empty($d['customer_name'])) $out[] = 'Customer : ' . plain($d['customer_name']);
@@ -43,9 +55,19 @@ function v1Preview($d, $type)
     foreach (['items', 'totals', 'payments'] as $k) {
         if (!empty($d[$k])) $out[] = rtrim(plain($d[$k]), "\n");
     }
+    $payStatus = (string) ($d['payment_status'] ?? '');
+    if ($isBillJob && ($docType === 'BILL' || ($docType === 'INVOICE' && $payStatus !== ''))) {
+        $out[] = $line;
+        $out[] = $center($docType === 'BILL' ? 'NOT PAID / غير مدفوع'
+            : (['paid' => 'PAID / مدفوع', 'partial' => 'PARTIALLY PAID / مدفوع جزئياً'][$payStatus] ?? 'UNPAID / غير مدفوع'));
+    }
     if (!empty($d['invoice_footer'])) {
         $out[] = $line;
         foreach (explode("\n", plain($d['invoice_footer'])) as $f) $out[] = $center($f);
+    }
+    if ($isBillJob) {
+        $out[] = str_repeat('=', $w);
+        $out[] = $center('Powered by bizpoz.co');
     }
     return implode("\n", $out);
 }

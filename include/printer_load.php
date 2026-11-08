@@ -772,12 +772,23 @@ if ($printType === 'BILL' || $printType === 'INVOICE') {
         $commands .= escText("Mob : " . $phone, 'center', 18);
     }
 
+    // Title: the POS sends doc_type BILL (BILL button, before payment) or INVOICE (checkout).
+    // Older POS versions send nothing -> no title, as before.
+    $docType = strtoupper((string) ($data['doc_type'] ?? ''));
+    if ($docType === 'BILL' || $docType === 'INVOICE') {
+        $commands .= "------------------------------------------------" . $nl;
+        $commands .= $esc . "a\x01" . $esc . "E\x01";
+        $commands .= escText('*** ' . $docType . ' ***', 'center', 22);
+        $commands .= $esc . "E\x00";
+        $commands .= escText($docType === 'BILL' ? 'فاتورة مبدئية' : 'فاتورة', 'center', 22);
+    }
+
     // Separator line
     $commands .= "================================================" . $nl;
 
     // Order info
     $commands .= $esc . "a\x00";
-    $commands .= escText("Invoice # : " . $orderNo, 'left', 18);
+    $commands .= escText(($docType === 'BILL' ? "Bill #    : " : "Invoice # : ") . $orderNo, 'left', 18);
     $commands .= escText("Date      : " . $date . " " . $time, 'left', 18);
     if ($customerName)
         $commands .= escText("Customer  : " . $customerName, 'left', 18);
@@ -806,6 +817,17 @@ if ($printType === 'BILL' || $printType === 'INVOICE') {
         $commands .= str_replace("\n", $nl, $payments);
     }
 
+    // Payment status (sent by the POS with doc_type): BILL is always NOT PAID
+    $payStatus = (string) ($data['payment_status'] ?? '');
+    if ($docType === 'BILL' || ($docType === 'INVOICE' && $payStatus !== '')) {
+        $statusText = $docType === 'BILL' ? 'NOT PAID / غير مدفوع'
+            : (['paid' => 'PAID / مدفوع', 'partial' => 'PARTIALLY PAID / مدفوع جزئياً'][$payStatus] ?? 'UNPAID / غير مدفوع');
+        $commands .= "------------------------------------------------" . $nl;
+        $commands .= $esc . "a\x01";
+        $commands .= escText($statusText, 'center', 22);
+        $commands .= $esc . "a\x00";
+    }
+
     // Footer
     if ($invoiceFooter) {
         $commands .= "------------------------------------------------" . "\x0A";
@@ -815,7 +837,7 @@ if ($printType === 'BILL' || $printType === 'INVOICE') {
 
     $commands .= "================================================" . "\x0A";
     $commands .= $esc . "a\x01";
-    $commands .= "Powered by BIZPOZ" . "\x0A";
+    $commands .= "Powered by bizpoz.co" . "\x0A";
 
     // Feed and cut
     $commands .= $esc . "d\x05";

@@ -141,11 +141,18 @@
 
             // 4. Ticket Banner
             var bannerType = (type || batch.print_type || (isKot ? 'KOT' : 'INVOICE')).toUpperCase();
+            // BILL = before payment (BILL button), INVOICE = after checkout; both get the Arabic title underneath
+            var bannerAr = { BILL: 'فاتورة مبدئية', INVOICE: 'فاتورة' }[bannerType] || '';
             y += 4;
             ctx.font = 'bold 22px ' + fontMain;
             ctx.textAlign = 'center';
             ctx.fillText('*** ' + bannerType + ' ***', paperWidth / 2, y);
             y += 28;
+            if (bannerAr && !isKot) {
+                ctx.font = 'bold 21px ' + fontMain;
+                ctx.fillText(bannerAr, paperWidth / 2, y);
+                y += 28;
+            }
 
             // Separator
             drawDottedLine(ctx, padding, y, paperWidth - padding);
@@ -456,7 +463,33 @@
                 y += gtBoxH + 14;
 
                 // 10. Payments Block
-                if (batch.payments_data) {
+                // payment_status comes with v2 bill data: BILL shows NOT PAID + amount due,
+                // INVOICE shows what was really paid and PAID / PARTIALLY PAID / UNPAID
+                var statusPill = function (text) {
+                    y += 6;
+                    ctx.font = 'bold 22px ' + fontMain;
+                    ctx.textAlign = 'center';
+                    var w = Math.min(contentWidth, ctx.measureText(text).width + 40);
+                    ctx.save();
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect((paperWidth - w) / 2, y - 4, w, 36);
+                    ctx.restore();
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(text, paperWidth / 2, y + 3);
+                    y += 44;
+                };
+                if (batch.payment_status !== undefined && bannerType === 'BILL') {
+                    y = drawRow('Amount Due / المبلغ المستحق', cur + Number(batch.balance_due || 0).toFixed(2), y, { size: 20, bold: true });
+                    statusPill('NOT PAID / غير مدفوع');
+                } else if (batch.payment_status !== undefined) {
+                    var pdv = batch.payments_data || {};
+                    if (Number(batch.paid_amount) > 0 && pdv.method) y = drawRow('Payment Method / طريقة الدفع', pdv.method, y, { size: 19 });
+                    y = drawRow('Paid / المبلغ المدفوع', cur + Number(batch.paid_amount || 0).toFixed(2), y, { size: 19 });
+                    if (Number(pdv.change) > 0) y = drawRow('Change Due / الباقي', cur + Number(pdv.change).toFixed(2), y, { size: 19, bold: true });
+                    if (Number(batch.balance_due) > 0) y = drawRow('Balance Due / المبلغ المتبقي', cur + Number(batch.balance_due).toFixed(2), y, { size: 20, bold: true });
+                    statusPill({ paid: 'PAID / مدفوع', partial: 'PARTIALLY PAID / مدفوع جزئياً', unpaid: 'UNPAID / غير مدفوع' }[batch.payment_status] || 'UNPAID / غير مدفوع');
+                } else if (batch.payments_data) {
                     var pd = batch.payments_data;
                     if (pd.method) y = drawRow('Payment Method / طريقة الدفع', pd.method, y, { size: 19 });
                     if (pd.paid) y = drawRow('Paid / المبلغ المدفوع', cur + Number(pd.paid).toFixed(2), y, { size: 19 });
@@ -495,6 +528,15 @@
                         y += 25;
                     }
                 }
+
+                // 12. Powered by (bill and invoice only, not KOT)
+                y += 14;
+                ctx.font = '15px ' + fontMain;
+                ctx.fillStyle = '#333333';
+                ctx.textAlign = 'center';
+                ctx.fillText('Powered by bizpoz.co', paperWidth / 2, y);
+                ctx.fillStyle = '#000000';
+                y += 20;
             } else {
                 // KOT bottom divider & timestamp
                 y += 10;
