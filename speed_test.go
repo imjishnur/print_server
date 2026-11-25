@@ -171,3 +171,32 @@ func TestV2DrawerFollowsPOSSetting(t *testing.T) {
 		}
 	}
 }
+
+// A Windows printer saved in the POS without a share name: path is sent empty and
+// printer_name has the printer. It must print there, not on the default printer.
+func TestEmptyPathUsesPrinterName(t *testing.T) {
+	f := newFakePrinters("OFFICE", "POS-80C")
+	a := testAgent(t, f)
+	res := decodeResponse(t, serve(a, multipartRequest(map[string]string{
+		"image_base64": receiptPNGBase64(t), "print_type": "BILL", "path": "", "printer_name": "OFFICE", "connection_type": "windows",
+	})))
+	if res["method"] != "windows_share" || f.printed()[0].target != "OFFICE" {
+		t.Fatalf("v2 went to %v (%v)", f.printed()[0].target, res)
+	}
+
+	content := sample(t, "kot-basic", func(d batch) {
+		d["path"], d["printer_name"], d["type"], d["printer_ip_address"] = "", "OFFICE", "windows", ""
+	})
+	res = decodeResponse(t, serve(a, multipartRequest(map[string]string{"print_type": "KOT", "content_data": content})))
+	if res["method"] != "windows_share" || f.printed()[1].target != "OFFICE" {
+		t.Fatalf("v1 went to %v (%v)", f.printed()[1].target, res)
+	}
+
+	// Neither set: the default printer, as before
+	res = decodeResponse(t, serve(a, multipartRequest(map[string]string{
+		"image_base64": receiptPNGBase64(t), "print_type": "BILL", "path": "", "printer_name": "",
+	})))
+	if res["method"] != "popup_fallback" || f.printed()[2].target != "POS-80C" {
+		t.Fatalf("no printer named: %v", res)
+	}
+}

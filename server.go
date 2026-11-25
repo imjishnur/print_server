@@ -161,6 +161,16 @@ func firstSet(post map[string]string, data batch, key, def string) string {
 	return def
 }
 
+// printerPath is the Windows printer to print to: the share name the POS sends as
+// path, or its printer_name when path is empty (a printer saved without a share
+// name). PHP's ?? stopped at the empty path and printed on the default printer.
+func printerPath(d batch) string {
+	if p := strings.TrimSpace(d.str("path")); p != "" {
+		return p
+	}
+	return strings.TrimSpace(d.str("printer_name"))
+}
+
 func intOr(v any, def int) int {
 	if n, err := strconv.Atoi(phpStr(v)); err == nil && n != 0 {
 		return n
@@ -170,8 +180,11 @@ func intOr(v any, def int) int {
 
 func (a *Agent) printV1(w http.ResponseWriter, job *printJob, d batch, printType string) {
 	printerIP := d.str("printer_ip_address")
-	path := d.str("path")
 	printerType := phpStr(d.pick("windows", "type"))
+	path := d.str("path")
+	if printerType == "windows" {
+		path = printerPath(d)
+	}
 	connectionType := phpStr(d.pick("popup", "connection_type"))
 	port := intOr(d.pick(nil, "printer_port"), 9100)
 	job.Printer = printerLabel(path, printerIP, port)
@@ -280,7 +293,7 @@ func (a *Agent) printShift(w http.ResponseWriter, job *printJob, d batch, printe
 func (a *Agent) printV2(w http.ResponseWriter, job *printJob, imageB64 string, d batch, printType string) {
 	printerIP := phpStr(d.pick("", "printer_ip", "printer_ip_address"))
 	port := intOr(d.pick(nil, "printer_port"), 9100)
-	path := phpStr(d.pick("", "path", "printer_name"))
+	path := printerPath(d)
 	// The POS sends open_cash_drawer Yes/No (Master settings > Receipt & drawer) and
 	// that decides. Without it (older POS pages, test prints) BILL / INVOICE open it.
 	openDrawer := printType == "BILL" || printType == "INVOICE"
