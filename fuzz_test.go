@@ -39,6 +39,6 @@ func FuzzV2Images(f *testing.F) {
 	f.Add([]byte("\x89PNG\r\n\x1a\n"))
 	f.Add([]byte("GIF89a"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = buildV2(base64.StdEncoding.EncodeToString(data), true)
+		_, _ = buildV2(base64.StdEncoding.EncodeToString(data), true, true)
 	})
 }

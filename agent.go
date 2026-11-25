@@ -34,8 +34,9 @@ type Agent struct {
 	servers []*http.Server
 	stopped bool
 
-	printLocks sync.Map // printer name / ip:port -> *sync.Mutex, one job at a time per printer
-	jobs       jobLog
+	printLocks  sync.Map // printer name / ip:port -> *sync.Mutex, one job at a time per printer
+	deadSockets sync.Map // ip:port -> time.Time of the last failed connection
+	jobs        jobLog
 
 	// Delivery to the printer; tests replace these with fakes.
 	winSend  func(name string, data []byte) error
@@ -198,6 +199,30 @@ func (a *Agent) printSocket(ip string, port int, data []byte, timeout time.Durat
 	unlock := a.lockPrinter(net.JoinHostPort(ip, strconv.Itoa(port)))
 	defer unlock()
 	return a.sockSend(ip, port, data, timeout)
+}
+
+// deadSocketWait: after a network printer fails, jobs that can go another way
+// skip it for this long instead of waiting for the timeout on every print.
+const deadSocketWait = 30 * time.Second
+
+var errSocketSkipped = fmt.Errorf("skipped: failed less than %v ago", deadSocketWait)
+
+// trySocket is printSocket that remembers failures. With hasFallback (the job can
+// still go to a Windows printer) a printer that failed recently is skipped at once.
+func (a *Agent) trySocket(ip string, port int, data []byte, timeout time.Duration, hasFallback bool) error {
+	key := net.JoinHostPort(ip, strconv.Itoa(port))
+	if hasFallback {
+		if t, ok := a.deadSockets.Load(key); ok && time.Since(t.(time.Time)) < deadSocketWait {
+			return errSocketSkipped
+		}
+	}
+	err := a.printSocket(ip, port, data, timeout)
+	if err != nil {
+		a.deadSockets.Store(key, time.Now())
+	} else {
+		a.deadSockets.Delete(key)
+	}
+	return err
 }
 
 // sendSocket prints to a network printer (port 9100).

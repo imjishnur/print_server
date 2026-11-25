@@ -72,7 +72,7 @@ func BenchmarkV2Picture(b *testing.B) {
 	}
 	img := base64.StdEncoding.EncodeToString(png)
 	for b.Loop() {
-		if _, err := buildV2(img, true); err != nil {
+		if _, err := buildV2(img, true, true); err != nil {
 			b.Fatal(err)
 		}
 	}

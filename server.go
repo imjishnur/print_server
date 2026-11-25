@@ -182,6 +182,9 @@ func (a *Agent) printV1(w http.ResponseWriter, job *printJob, d batch, printType
 		commands = a.v1.KOT(d)
 	case "BILL", "INVOICE":
 		commands = a.v1.Bill(d)
+	case "TEST":
+		// The POS "Test print" button; printer_load.php printed nothing for it
+		commands = testTicket(job.Printer)
 	case "SHIFT":
 		a.printShift(w, job, d, printerIP, path, printerType, connectionType, port)
 		return
@@ -244,7 +247,8 @@ func (a *Agent) printShift(w http.ResponseWriter, job *printJob, d batch, printe
 	var errorMsg string
 
 	if printerIP != "" && connectionType == "php_print_server" {
-		if err := a.printSocket(printerIP, port, commands, 5*time.Second); err == nil {
+		hasFallback := path != "" && printerType == "windows"
+		if err := a.trySocket(printerIP, port, commands, 5*time.Second, hasFallback); err == nil {
 			a.reply(w, job, http.StatusOK, obj{"success": true, "print_type": "SHIFT", "printer_ip": printerIP, "port": port, "method": "socket"})
 			return
 		} else {
@@ -277,10 +281,15 @@ func (a *Agent) printV2(w http.ResponseWriter, job *printJob, imageB64 string, d
 	printerIP := phpStr(d.pick("", "printer_ip", "printer_ip_address"))
 	port := intOr(d.pick(nil, "printer_port"), 9100)
 	path := phpStr(d.pick("", "path", "printer_name"))
-	openDrawer := d.str("open_cash_drawer") == "Yes" || printType == "BILL" || printType == "INVOICE"
+	// The POS sends open_cash_drawer Yes/No (Master settings > Receipt & drawer) and
+	// that decides. Without it (older POS pages, test prints) BILL / INVOICE open it.
+	openDrawer := printType == "BILL" || printType == "INVOICE"
+	if v := d.str("open_cash_drawer"); v != "" {
+		openDrawer = strings.EqualFold(v, "Yes")
+	}
 	job.Printer = printerLabel(path, printerIP, port)
 
-	commands, err := buildV2(imageB64, openDrawer)
+	commands, err := buildV2(imageB64, openDrawer, a.cfg.V2SkipBlankRows)
 	if err != nil {
 		a.reply(w, job, http.StatusBadRequest, obj{"success": false, "error": err.Error()})
 		return
@@ -289,9 +298,13 @@ func (a *Agent) printV2(w http.ResponseWriter, job *printJob, imageB64 string, d
 	log.Printf("v2 %s path=%q ip=%q bytes=%d", printType, path, printerIP, len(commands))
 
 	if printerIP != "" {
-		if err := a.printSocket(printerIP, port, commands, 2*time.Second); err == nil {
+		// A LAN printer answers in milliseconds; a long wait only delays the
+		// Windows fallback. A printer that just failed is skipped when there is one.
+		if err := a.trySocket(printerIP, port, commands, time.Second, path != ""); err == nil {
 			a.reply(w, job, http.StatusOK, obj{"success": true, "v2": true, "print_type": printType, "printer_ip": printerIP, "port": port, "method": "socket"})
 			return
+		} else {
+			log.Printf("socket print %s:%d failed: %v", printerIP, port, err)
 		}
 	}
 	if path != "" {
@@ -400,11 +413,9 @@ func (a *Agent) handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.FormValue("printer")
-	ticket := fmt.Sprintf("\x1B@\x1Ba\x01\x1B!\x38PRINT SERVER\x0A\x1B!\x00%s\x0A%s\x0A%s\x0ATest print OK\x0A%s\x0A\x1Bd\x05\x1DV\x00",
-		eqLine, name, time.Now().Format("02-01-2006 03:04 PM"), eqLine)
 	// Logged like a POS job so the Print Log shows test prints too
 	job := newJob(r, map[string]string{"printer": name}, nil)
-	job.Kind, job.PrintType, job.Printer, job.output = "test", "TEST", name, []byte(ticket)
+	job.Kind, job.PrintType, job.Printer, job.output = "test", "TEST", name, testTicket(name)
 	if err := a.printWindows(name, job.output); err != nil {
 		a.reply(w, job, http.StatusOK, obj{"success": false, "error": err.Error()})
 		return
@@ -412,7 +423,12 @@ func (a *Agent) handleTest(w http.ResponseWriter, r *http.Request) {
 	a.reply(w, job, http.StatusOK, obj{"success": true, "print_type": "TEST", "method": "windows"})
 }
 
-var homeTmpl = template.Must(template.New("home").Parse(`<!doctype html>
+func testTicket(printer string) []byte {
+	return []byte(fmt.Sprintf("\x1B@\x1Ba\x01\x1B!\x38PRINT SERVER\x0A\x1B!\x00%s\x0A%s\x0A%s\x0ATest print OK\x0A%s\x0A\x1Bd\x05\x1DV\x00",
+		eqLine, printer, time.Now().Format("02-01-2006 03:04 PM"), eqLine))
+}
+
+var homeTmpl =template.Must(template.New("home").Parse(`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Print Server</title>
 <style>

@@ -24,6 +24,11 @@ type Config struct {
 	// When there is no logo\logo.png in the data dir, print the logo sent by the app
 	// (logo_base64). Laragon only uses its local file.
 	UseBatchLogo bool `json:"use_batch_logo"`
+
+	// V2 picture receipts: send blank space as paper feeds instead of white
+	// picture rows, which thermal printers print slowly. false = bytes exactly
+	// like printer_load_v2.php.
+	V2SkipBlankRows bool `json:"v2_skip_blank_rows"`
 }
 
 func defaultConfig() Config {
@@ -37,6 +42,7 @@ func defaultConfig() Config {
 		BigStoreName:    true,
 		DefaultLogoMode: "esc_star",
 		UseBatchLogo:    true,
+		V2SkipBlankRows: true,
 	}
 }
 

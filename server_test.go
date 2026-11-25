@@ -256,6 +256,7 @@ func receiptPNGBase64(t testing.TB) string {
 func TestPrintV2PictureLikePOSBeta(t *testing.T) {
 	f := newFakePrinters("POS-80C")
 	a := testAgent(t, f)
+	a.cfg.V2SkipBlankRows = false // byte-for-byte PHP output
 
 	// Same fields POS beta sends in printBillSilentlyV2
 	res := decodeResponse(t, serve(a, multipartRequest(map[string]string{
@@ -286,7 +287,7 @@ func TestPrintShiftPassesCommandsThrough(t *testing.T) {
 func TestOtherPrintTypesPrintNothing(t *testing.T) {
 	f := newFakePrinters("POS-80C")
 	a := testAgent(t, f)
-	w := serve(a, multipartRequest(map[string]string{"print_type": "TEST", "content_data": sample(t, "kot-basic", nil)}))
+	w := serve(a, multipartRequest(map[string]string{"print_type": "REPORT", "content_data": sample(t, "kot-basic", nil)}))
 	if w.Code != 200 || w.Body.Len() != 0 || len(f.printed()) != 0 {
 		t.Fatalf("printer_load.php prints nothing for other types; got %d %q", w.Code, w.Body.String())
 	}
@@ -518,7 +519,7 @@ func TestHugeImageRejected(t *testing.T) {
 	ihdr := []byte("IHDR\x00\x01\x86\xa0\x00\x01\x86\xa0\x08\x06\x00\x00\x00")
 	png := append([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\r"), ihdr...)
 	png = binary.BigEndian.AppendUint32(png, crc32.ChecksumIEEE(ihdr))
-	_, err := buildV2(base64.StdEncoding.EncodeToString(png), false)
+	_, err := buildV2(base64.StdEncoding.EncodeToString(png), false, true)
 	if err == nil || err.Error() != "Image too large" {
 		t.Fatalf("want 'Image too large', got %v", err)
 	}

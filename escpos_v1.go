@@ -310,10 +310,24 @@ func (v v1Builder) Bill(d batch) []byte {
 		escText(&buf, "Mob : "+phone, "center", 18)
 	}
 
+	// Title: the POS sends doc_type BILL (BILL button, before payment) or INVOICE
+	// (checkout). Older POS versions send nothing -> no title, as before.
+	docType := strings.ToUpper(d.str("doc_type"))
+	if docType == "BILL" || docType == "INVOICE" {
+		buf.WriteString(dashLine + nl)
+		buf.WriteString("\x1Ba\x01\x1BE\x01")
+		escText(&buf, "*** "+docType+" ***", "center", 22)
+		buf.WriteString("\x1BE\x00")
+	}
+
 	buf.WriteString(eqLine + nl)
 
 	buf.WriteString("\x1Ba\x00")
-	escText(&buf, "Invoice # : "+d.str("sale_no_p"), "left", 18)
+	numberLabel := "Invoice # : "
+	if docType == "BILL" {
+		numberLabel = "Bill #    : "
+	}
+	escText(&buf, numberLabel+d.str("sale_no_p"), "left", 18)
 	escText(&buf, "Date      : "+d.str("date")+" "+d.str("time_inv"), "left", 18)
 	if customer := d.str("customer_name"); truthy(customer) {
 		escText(&buf, "Customer  : "+customer, "left", 18)
@@ -330,6 +344,24 @@ func (v v1Builder) Bill(d batch) []byte {
 		}
 	}
 
+	// Payment status (sent by the POS with doc_type): BILL is always NOT PAID
+	payStatus := d.str("payment_status")
+	if docType == "BILL" || (docType == "INVOICE" && payStatus != "") {
+		statusText := "UNPAID / غير مدفوع"
+		switch {
+		case docType == "BILL":
+			statusText = "NOT PAID / غير مدفوع"
+		case payStatus == "paid":
+			statusText = "PAID / مدفوع"
+		case payStatus == "partial":
+			statusText = "PARTIALLY PAID / مدفوع جزئياً"
+		}
+		buf.WriteString(dashLine + nl)
+		buf.WriteString("\x1Ba\x01")
+		escText(&buf, statusText, "center", 22)
+		buf.WriteString("\x1Ba\x00")
+	}
+
 	if footer := d.str("invoice_footer"); truthy(footer) {
 		buf.WriteString(dashLine + "\x0A")
 		buf.WriteString("\x1Ba\x01")
@@ -338,7 +370,7 @@ func (v v1Builder) Bill(d batch) []byte {
 
 	buf.WriteString(eqLine + "\x0A")
 	buf.WriteString("\x1Ba\x01")
-	buf.WriteString("Powered by BIZPOZ\x0A")
+	buf.WriteString("Powered by bizpoz.co\x0A")
 
 	buf.WriteString("\x1Bd\x05")
 	buf.WriteString("\x1DV\x00")

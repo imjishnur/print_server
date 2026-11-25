@@ -104,7 +104,7 @@ func TestV2Golden(t *testing.T) {
 				t.Skip("no golden file; run tools/golden/gen.php")
 			}
 			openDrawer := sample.OpenCashDrawer == "Yes" || sample.PrintType == "BILL" || sample.PrintType == "INVOICE"
-			got, err := buildV2("data:image/png;base64,"+base64.StdEncoding.EncodeToString(png), openDrawer)
+			got, err := buildV2("data:image/png;base64,"+base64.StdEncoding.EncodeToString(png), openDrawer, false)
 			if err != nil {
 				t.Fatal(err)
 			}
